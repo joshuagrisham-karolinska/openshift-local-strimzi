@@ -1,0 +1,194 @@
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: my-connect
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  authentication:
+    type: scram-sha-512
+  authorization:
+    type: simple
+    acls:
+    # Kafka Connects internal topics used to store configuration, offsets or status
+    - resource:
+        type: group
+        name: connect-cluster
+      operations:
+        - Read
+    - resource:
+        type: topic
+        name: connect-cluster-configs
+      operations:
+        - Create
+        - Describe
+        - Read
+        - Write
+    - resource:
+        type: topic
+        name: connect-cluster-status
+      operations:
+        - Create
+        - Describe
+        - Read
+        - Write
+    - resource:
+        type: topic
+        name: connect-cluster-offsets
+      operations:
+        - Create
+        - Describe
+        - Read
+        - Write
+    # Additional topics and groups used by connectors
+    # Change to match the topics used by your connectors
+    - resource:
+        type: group
+        name: connect-cluster
+      operations:
+       - Read
+    - resource:
+        type: topic
+        name: my-topic
+      operations:
+        - Create
+        - Describe
+        - Read
+        - Write
+
+    # give "my-connect" user access to all topics that start with "kar-vdp-"
+    - resource:
+        type: topic
+        name: kar-vdp-
+        patternType: prefix
+      operations:
+        - Create
+        - Describe
+        - Read
+        - Write
+
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnect
+metadata:
+  name: my-connect
+  annotations:
+    strimzi.io/use-connector-resources: "true"
+#  # use-connector-resources configures this KafkaConnect
+#  # to use KafkaConnector resources to avoid
+#  # needing to call the Connect REST API directly
+spec:
+  version: 3.7.0
+  replicas: 1
+  bootstrapServers: my-cluster-kafka-bootstrap:29094
+  tls:
+    trustedCertificates:
+      - secretName: my-cluster-cluster-ca-cert
+        certificate: ca.crt
+  authentication:
+    type: scram-sha-512
+    username: my-connect
+    passwordSecret:
+      secretName: my-connect
+      password: password
+
+  config:
+    group.id: connect-cluster
+    offset.storage.topic: connect-cluster-offsets
+    offset.storage.replication.factor: 1
+    config.storage.topic: connect-cluster-configs
+    config.storage.replication.factor: 1
+    status.storage.topic: connect-cluster-status
+    status.storage.replication.factor: 1
+
+    config.providers: secrets,configmaps
+    config.providers.secrets.class: io.strimzi.kafka.KubernetesSecretConfigProvider
+    config.providers.configmaps.class: io.strimzi.kafka.KubernetesConfigMapConfigProvider
+
+    key.converter: org.apache.kafka.connect.storage.StringConverter
+
+    #value.converter: io.apicurio.registry.utils.converter.AvroConverter
+    #value.converter.apicurio.registry.url: http://apicurio-registry-service:8080/apis/registry/v2
+    #value.converter.apicurio.registry.as-confluent: true
+    #value.converter.apicurio.registry.auto-register: true
+    ##value.converter.apicurio.registry.request.headers.Authorization: 'Basic: YWxhZGRpbjpvcGVuc2VzYW1'
+    ##value.converter.apicurio.registry.request.ssl.truststore.location: ??
+    ##value.converter.apicurio.registry.request.ssl.truststore.password: ??
+    ##value.converter.apicurio.registry.request.ssl.truststore.type: ??
+    ##value.converter.apicurio.registry.request.ssl.keystore.location: ??
+    ##value.converter.apicurio.registry.request.ssl.keystore.password: ??
+    ##value.converter.apicurio.registry.request.ssl.keystore.type: ??
+    ##value.converter.apicurio.registry.request.ssl.key.password: ??
+
+    value.converter: io.confluent.connect.avro.AvroConverter
+    value.converter.schema.registry.url: http://apicurio-registry-service:8080/apis/ccompat/v7
+    #value.converter.basic.auth.credentials.source=USER_INFO
+    #value.converter.basic.auth.user.info={username}:{password} #TODO
+    #value.converter.schema.registry.ssl.truststore.location=<location>
+    #value.converter.schema.registry.ssl.truststore.password=<truststore-password>
+    #value.converter.schema.registry.ssl.keystore.location=<keystore-location>
+    #value.converter.schema.registry.ssl.keystore.password=<keystore-password>
+    #value.converter.schema.registry.ssl.key.password=<key-password>
+
+    ## some info on how to configure with different default converters (Confluent vs Apicurio): https://stackoverflow.com/a/76161478
+
+  template:
+    connectContainer:
+      env:
+        # workaround for issue with Kryptonite which requires some add-opens.. good to get rid of this later if moving away from Kryptonite!
+        - name: STRIMZI_JAVA_SYSTEM_PROPERTIES
+          value: '--add-opens java.base/java.util=ALL-UNNAMED'
+  build: # build image which has our connector classes; longer term we should build the image separately and just point to it with "image: ..." instead
+    output:
+      type: docker
+      image: image-registry.openshift-image-registry.svc:5000/kafka/my-connect:latest # store image in cluster's own internal registry
+    plugins:
+      - name: apicurio-connect-converter
+        artifacts:
+          - type: maven
+            group: io.apicurio
+            artifact: apicurio-registry-distro-connect-converter
+            version: 2.5.11.Final
+      # org.apache.kafka:connect-file gives org.apache.kafka.connect.file.FileStreamSourceConnector
+      - name: connect-file
+        artifacts:
+          - type: maven
+            group: org.apache.kafka
+            artifact: connect-file
+            version: 3.7.0
+      - name: connect-transforms
+        artifacts:
+          - type: maven
+            group: org.apache.kafka
+            artifact: connect-transforms
+            version: 3.7.0
+      - name: confluent-connect-avro-converter
+        artifacts:
+          - type: maven
+            repository: https://packages.confluent.io/maven
+            group: io.confluent
+            artifact: kafka-connect-avro-converter
+            version: 7.6.0
+      - name: confluent-kafka-connect-jdbc
+        artifacts:
+          - type: maven
+            repository: https://packages.confluent.io/maven
+            group: io.confluent
+            artifact: kafka-connect-jdbc
+            version: 10.7.4
+      - name: redhatinsights-expandjsonsmt
+        artifacts:
+          - type: tgz
+            url: https://github.com/RedHatInsights/expandjsonsmt/releases/download/0.0.7/kafka-connect-smt-expandjsonsmt-0.0.7.tar.gz
+            sha512sum: 2dc2ab76a9c41200c022c34698bc345b933e53737bdc53f345b0f84232a5e4693a879b40bf14e3f74064ccfdfbf03703dea9a18b55803f059a704808543da4c4
+      - name: kryptonite-transform
+        artifacts:
+          - type: zip
+            url: https://github.com/hpgrahsl/kryptonite-for-kafka/releases/download/v0.4.2/connect-transform-kryptonite-0.4.2.zip
+            sha512sum: 1b693752f576ee67f12d7a2f51e0bcd0e9ec73dbabed6beab43d7f693433412e7056de077743eba0128ec76084d20e59d1ecbb249e11120e578f8a113bb3eab8
+
+# FYI: This Connect cluster is not intended to be used externally e.g. via REST API, but instead only managed by the Strimzi Operator
+# So in theory we should not have to worry about access control etc to the Connectors themselves, except maybe if people in their own namespace happen to create a connector with exactly the same name that will collide with another?
+# see: https://github.com/strimzi/strimzi-kafka-operator/issues/3229#issuecomment-1497758438
+# This means that care needs to be taken to not expose Connect outside of the cluster's own namespace and then take care if it is shown in any kind of GUI

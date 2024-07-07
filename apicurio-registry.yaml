@@ -1,0 +1,43 @@
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: apicurio-registry
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  topicName: __apicurio_registry
+  partitions: 5
+  replicas: 1
+  config:
+    cleanup.policy: compact
+---
+apiVersion: registry.apicur.io/v1
+kind: ApicurioRegistry
+metadata:
+  name: apicurio-registry
+spec:
+  configuration:
+    persistence: kafkasql
+    env:
+      - name: REGISTRY_KAFKASQL_TOPIC
+        value: __apicurio_registry
+      - name: REGISTRY_KAFKASQL_TOPIC_AUTO_CREATE
+        value: 'false'
+    kafkasql:
+      bootstrapServers: 'my-cluster-kafka-bootstrap:29094'
+      security:
+        scram:
+          mechanism: SCRAM-SHA-512
+          user: kafkaadmin
+          passwordSecretName: kafkaadmin
+          truststoreSecretName: my-cluster-cluster-ca-cert
+# ref: https://www.apicur.io/registry/docs/apicurio-registry-operator/1.1.2-v2.5.11.final/assembly-registry-storage.html#registry-persistence-kafkasql-scram
+
+# TODO: For security, Apicurio works via OIDC. Some notes:
+# - There is no CRD for schemas; assumption is that the "flow" will be that schemas are created on-the-fly by Producer clients instead of being deployed as CRDs -- is this ok???? TBH I think this is the typical flow, and creating schemas beforehand like we do today is a bit of an exception case??
+# - if wanted to use Confluent SR anyway, there is this: https://github.com/lsst-sqre/strimzi-registry-operator but still no CRD for schemas (so same "issue" as above)
+# - pre-defined roles (sr-admin, sr-developer, sr-readonly) can be placed on users in Keycloak, OR, you can set ROLE_BASED_AUTHZ_SOURCE=application and set you rown user-to-role mapping via the Apicurio REST API
+# - enable "basic auth" where the user+password will be used as client_id and client_secret and still login via Keycloak to using Client Credentials, but for the user/"client" it "feels" like using Schema Registry with HTTP Basic Auth
+# - enable "anonymous read" if you want that anonymous users can read schemas without being able to update them
+# - enable "artifact owner-only authorization" if you want that the only one who can update an artifact is its orginal creator

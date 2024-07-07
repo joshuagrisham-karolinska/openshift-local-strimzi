@@ -1,0 +1,18 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaConnector
+metadata:
+  name: license-file-connector-confluent-avro
+  labels:
+    # The strimzi.io/cluster label identifies the KafkaConnect instance
+    # in which to create this connector. That KafkaConnect instance
+    # must have the strimzi.io/use-connector-resources annotation
+    # set to true.
+    strimzi.io/cluster: my-connect
+spec:
+  class: org.apache.kafka.connect.file.FileStreamSourceConnector
+  tasksMax: 2
+  config:
+    file: "/opt/kafka/LICENSE"
+    topic: my-topic # connect user needs to have access to this topic... might need ACL to be updated for other connectors
+    value.converter: io.confluent.connect.avro.AvroConverter
+    value.converter.schema.registry.url: http://apicurio-registry-service:8080/apis/ccompat/v7

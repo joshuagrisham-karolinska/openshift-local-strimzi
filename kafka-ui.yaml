@@ -1,0 +1,105 @@
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: kafka-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-ui
+  template:
+    metadata:
+      labels:
+        app: kafka-ui
+    spec:
+      restartPolicy: Always
+      volumes:
+        - name: config
+          #secret:
+          #  secretName: kafkaui-config
+          emptyDir: {}
+        - name: kafka-user-tls
+          secret:
+            secretName: kafkaadmintls
+        - name: kafka-cluster-ca
+          secret:
+            secretName: my-cluster-cluster-ca-cert
+      containers:
+        - name: kafka-ui
+          image: 'docker.io/provectuslabs/kafka-ui:latest'
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            - name: KAFKA_CLUSTERS_0_NAME
+              value: my-cluster
+
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              value: my-cluster-kafka-bootstrap:29093 # SSL LISTENER!
+
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL
+              value: SSL
+
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_LOCATION
+              value: /etc/kafka/user-tls/user.p12
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SSL_KEYSTORE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafkaadmintls
+                  key: user.password
+
+            - name: KAFKA_CLUSTERS_0_SSL_TRUSTSTORELOCATION
+              value: /etc/kafka/cluster-ca/ca.p12
+            - name: KAFKA_CLUSTERS_0_SSL_TRUSTSTOREPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: my-cluster-cluster-ca-cert
+                  key: ca.password
+
+            - name: KAFKA_CLUSTERS_0_PROPERTIES_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM
+              value: '' # DISABLE COMMON NAME VERIFICATION
+
+            - name: KAFKA_CLUSTERS_0_SCHEMAREGISTRY
+              value: http://apicurio-registry-service:8080/apis/ccompat/v7/
+
+            - name: KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME
+              value: my-connect
+            - name: KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS
+              value: http://connect-kafka.apps-crc.testing
+
+            - name: DYNAMIC_CONFIG_ENABLED
+              value: 'true'
+          volumeMounts:
+            - mountPath: /etc/kafkaui/
+              name: config
+            - mountPath: /etc/kafka/user-tls
+              name: kafka-user-tls
+            - mountPath: /etc/kafka/cluster-ca
+              name: kafka-cluster-ca
+
+# see: https://github.com/provectus/kafka-ui/blob/master/documentation/compose/kafka-ssl.yml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+spec:
+  selector:
+    app: kafka-ui
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: kafka-ui
+spec:
+  to:
+    kind: Service
+    name: kafka-ui
+    weight: 100
+  port:
+    targetPort: 8080
