@@ -13,6 +13,6 @@ spec:
   tasksMax: 2
   config:
     file: "/opt/kafka/LICENSE"
-    topic: my-topic # connect user needs to have access to this topic... might need ACL to be updated for other connectors
+    topic: my-topic-confluent # connect user needs to have access to this topic... might need ACL to be updated for other connectors
     value.converter: io.confluent.connect.avro.AvroConverter
     value.converter.schema.registry.url: http://apicurio-registry-service:8080/apis/ccompat/v7

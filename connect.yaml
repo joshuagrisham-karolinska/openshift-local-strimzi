@@ -51,6 +51,7 @@ spec:
     - resource:
         type: topic
         name: my-topic
+        patternType: prefix
       operations:
         - Create
         - Describe
@@ -192,3 +193,16 @@ spec:
 # So in theory we should not have to worry about access control etc to the Connectors themselves, except maybe if people in their own namespace happen to create a connector with exactly the same name that will collide with another?
 # see: https://github.com/strimzi/strimzi-kafka-operator/issues/3229#issuecomment-1497758438
 # This means that care needs to be taken to not expose Connect outside of the cluster's own namespace and then take care if it is shown in any kind of GUI
+
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: connect
+spec:
+  host: connect-kafka.apps-crc.testing
+  to:
+    kind: Service
+    name: my-connect-connect-api
+  port:
+    targetPort: rest-api
