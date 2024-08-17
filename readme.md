@@ -16,6 +16,8 @@ crc start -c 8 -m 18000 -d 120
 
 > Note 4: You can use the Hyper-V Manager tool in Windows to monitor resources of the `crc` virtual machine.
 
+> Note 5: If you get an error when port 6443 is trying to be bound then you need to figure out what is listening on your port 6443 first and try to kill it (`netstat -ano | findstr 6443` and then find what is running with the given PID). In my case I needed to stop the Windows service `IP Helper` because it was taking that port.
+
 1. Install the following operators from OperatorHub (it might take a bit before OperatorHub is fully functioning, and for the list to download; just wait a few minutes!):
     - cert-manager
     - Strimzi
